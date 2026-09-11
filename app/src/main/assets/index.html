@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,maximum-scale=1">
+  <meta name="theme-color" content="#141a1b">
+  <meta name="color-scheme" content="dark light">
+  <title>Ровно — валюты и расчёты</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="core.js" defer></script>
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <div class="app-shell">
+    <header class="app-header">
+      <div class="brand" aria-label="Ровно"><span class="brand-mark" aria-hidden="true"><i></i><i></i></span><span>ровно</span><span class="brand-dot">.</span></div>
+      <button class="icon-button settings-button" id="settings-button" aria-label="Настройки" title="Настройки"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h7m4 0h5M4 17h3m4 0h9"/><circle cx="13" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></svg></button>
+    </header>
+
+    <div class="rate-status">
+      <button class="status-detail" id="status-detail" aria-label="Информация о курсах"><span class="status-dot" id="status-dot"></span><span id="rates-status" role="status" aria-live="polite">Загружаем курсы</span><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m6 4 4 4-4 4"/></svg></button>
+      <button class="icon-button refresh-button" id="refresh-button" aria-label="Обновить курсы" title="Обновить курсы"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5"/><path d="M6.1 7a7 7 0 0 1 11.55-1L20 9M4 15l2.35 3A7 7 0 0 0 17.9 17"/></svg></button>
+    </div>
+
+    <main class="currency-area" aria-label="Конвертер валют">
+      <div class="currency-list" id="currency-list"></div>
+      <button class="add-currency" id="add-currency"><span aria-hidden="true">+</span> Добавить валюту</button>
+      <p class="unavailable-note" id="unavailable-note" hidden>Для первого расчёта загрузите курсы. Калькулятор уже работает.</p>
+    </main>
+
+    <section class="calculator" aria-label="Калькулятор">
+      <div class="expression-bar"><span class="input-label" id="input-label">Ввод в PLN</span><div class="expression" id="expression" aria-live="polite">0</div><button class="copy-button" id="copy-button" aria-label="Скопировать сумму" title="Скопировать сумму"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="11" height="12" rx="2"/><path d="M15 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3"/></svg></button></div>
+      <div class="keypad" id="keypad">
+        <button class="key key-utility" data-key="AC" aria-label="Очистить всё">AC</button>
+        <button class="key key-utility" data-key="+/-" aria-label="Изменить знак">±</button>
+        <button class="key key-utility" data-key="%" aria-label="Проценты">%</button>
+        <button class="key key-operator" data-key="/" aria-label="Разделить">÷</button>
+        <button class="key" data-key="7">7</button>
+        <button class="key" data-key="8">8</button>
+        <button class="key" data-key="9">9</button>
+        <button class="key key-operator" data-key="*" aria-label="Умножить">×</button>
+        <button class="key" data-key="4">4</button>
+        <button class="key" data-key="5">5</button>
+        <button class="key" data-key="6">6</button>
+        <button class="key key-operator" data-key="-" aria-label="Вычесть">−</button>
+        <button class="key" data-key="1">1</button>
+        <button class="key" data-key="2">2</button>
+        <button class="key" data-key="3">3</button>
+        <button class="key key-operator" data-key="+" aria-label="Прибавить">+</button>
+        <button class="key" data-key="," aria-label="Десятичная запятая">,</button>
+        <button class="key" data-key="0">0</button>
+        <button class="key key-back" data-key="BACK" aria-label="Удалить последний символ"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5h11v14H9l-7-7 7-7Z"/><path d="m12 9 6 6m0-6-6 6"/></svg></button>
+        <button class="key key-equals" data-key="=" aria-label="Результат">=</button>
+      </div>
+    </section>
+  </div>
+
+  <div class="sheet-backdrop" id="sheet-backdrop" hidden>
+    <section class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title" tabindex="-1">
+      <div class="sheet-handle" aria-hidden="true"></div>
+      <div class="sheet-header"><h1 id="sheet-title">Настройки</h1><button class="icon-button" id="close-sheet" aria-label="Закрыть"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div>
+      <div class="sheet-content" id="sheet-content"></div>
+    </section>
+  </div>
+  <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+</body>
+</html>
