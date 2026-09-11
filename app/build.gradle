@@ -9,6 +9,7 @@ def canSign = [releaseStore, releaseStorePassword, releaseAlias, releaseKeyPassw
 android {
     namespace 'com.rovno.app'
     compileSdk 35
+    buildFeatures { buildConfig true }
     testBuildType = providers.gradleProperty('testBuildType').getOrElse('debug')
     defaultConfig {
         applicationId 'com.rovno.app'
@@ -41,9 +42,12 @@ android {
         targetCompatibility JavaVersion.VERSION_17
     }
     lint { abortOnError true; checkReleaseBuilds true }
+    testOptions { unitTests.includeAndroidResources = true }
 }
 
 dependencies {
     testImplementation 'junit:junit:4.13.2'
     testImplementation 'org.json:json:20240303'
+    testImplementation 'org.robolectric:robolectric:4.14.1'
+    testImplementation 'androidx.test:core:1.6.1'
 }

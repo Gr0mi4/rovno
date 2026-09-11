@@ -10,8 +10,11 @@
   const SOURCE_URL = 'https://github.com/fawazahmed0/exchange-api';
   const DEFAULT_CODES = ['PLN', 'USD', 'EUR', 'BYN', 'RUB'];
   const SHORT_NAMES = { PLN: 'Злотый', USD: 'Доллар США', EUR: 'Евро', BYN: 'Бел. рубль', RUB: 'Росс. рубль' };
+  const LONG_PRESS_MS = 550;
+  const LONG_PRESS_MOVE_PX = 12;
   const metadata = new Map(Core.CURRENCIES.map((currency) => [currency.code, currency]));
   const calculator = new Core.Calculator();
+  const currencyRows = new Map();
   let rateState = { rates: null, date: null, provider: null, fetchedAt: null, error: null, refreshing: false };
   let preferences = readStorage(STORE) || {};
   let selectedCodes = Array.isArray(preferences.currencies)
@@ -20,13 +23,16 @@
   let activeCode = selectedCodes.includes(preferences.activeCode) ? preferences.activeCode : selectedCodes[0];
   let theme = ['system', 'light', 'dark'].includes(preferences.theme) ? preferences.theme : 'dark';
   let currentSheet = null;
+  let sheetStack = [];
   let previousFocus = null;
   let toastTimeout;
   let longPressTimeout;
   let longPressCode = null;
+  let longPressOrigin = null;
   let suppressClickUntil = 0;
   let browserRefresh = null;
   let calcState = calculator.state();
+  let appVersion = '0.1.0';
   const systemTheme = window.matchMedia('(prefers-color-scheme: dark)');
 
   if (typeof preferences.expression === 'string' && preferences.expression.length < 200) {
@@ -85,6 +91,8 @@
     else if (rateState.error) label = 'Сохранённые курсы · ' + dateLabel(rateState.date);
     else label = (snapshotOld() ? 'Курсы устарели · ' : 'Курсы на ') + dateLabel(rateState.date);
     $('rates-status').textContent = label;
+    $('rates-live').textContent = label;
+    $('status-detail').setAttribute('aria-label', 'Информация о курсах: ' + label);
     $('status-dot').classList.toggle('warning', !rateState.refreshing && (!hasRates || !!rateState.error || snapshotOld()));
     $('status-dot').classList.toggle('loading', !!rateState.refreshing);
     $('refresh-button').classList.toggle('loading', !!rateState.refreshing);
@@ -107,37 +115,72 @@
   function displayAmount(code, value) {
     if (value === null) return '—';
     const expression = String(calcState.expression || '0');
-    if (code === activeCode && /^-?\d+(?:[.,]\d*)?$/.test(expression)) {
-      const parts = expression.replace(',', '.').split('.');
-      const integer = Number(parts[0]);
-      const grouped = Object.is(integer, -0) ? '−0' : Core.format(integer, 0);
-      return grouped + (parts.length > 1 ? ',' + parts[1] : '');
-    }
-    return Core.format(value, code === activeCode ? 6 : 2);
+    return Core.formatAmount(value, code, {
+      active: code === activeCode,
+      rawExpression: code === activeCode ? expression : null
+    });
+  }
+
+  function ensureCurrencyRow(code) {
+    let row = currencyRows.get(code);
+    if (row) return row;
+    const currency = metadata.get(code);
+    row = document.createElement('button');
+    row.type = 'button';
+    row.className = 'currency-row';
+    row.dataset.currency = code;
+    row.innerHTML = '<span class="currency-badge" aria-hidden="true"></span>'
+      + '<span class="currency-meta"><span class="currency-code"></span><span class="currency-name"></span></span>'
+      + '<span class="currency-result"><span class="currency-amount"></span></span>'
+      + '<span class="currency-copy" aria-hidden="true" title="Скопировать"><svg viewBox="0 0 24 24"><rect x="8" y="8" width="11" height="12" rx="2"/><path d="M15 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3"/></svg></span>';
+    row.querySelector('.currency-code').textContent = code;
+    row.querySelector('.currency-name').textContent = SHORT_NAMES[code] || currency.name;
+    row.querySelector('.currency-badge').textContent = currency.symbol || code.slice(0, 1);
+    row.querySelector('.currency-copy').addEventListener('click', (event) => {
+      event.stopPropagation();
+      copyAmount(code);
+    });
+    currencyRows.set(code, row);
+    return row;
+  }
+
+  function updateCurrencyRow(code) {
+    const row = ensureCurrencyRow(code);
+    const currency = metadata.get(code);
+    const amount = convertedValue(code);
+    const formatted = displayAmount(code, amount);
+    const active = code === activeCode;
+    const unavailable = amount === null;
+    row.classList.toggle('active', active);
+    row.classList.toggle('no-rate', unavailable && code !== activeCode);
+    row.setAttribute('aria-pressed', String(active));
+    row.setAttribute('aria-label', currency.name + ', ' + (unavailable ? 'курс недоступен' : formatted) + (active ? ', ввод суммы' : ', выбрать для ввода'));
+    row.title = active ? 'Нажмите для ввода. Удерживайте, чтобы скопировать.' : (unavailable ? 'Курс недоступен' : 'Нажмите для ввода. Удерживайте, чтобы скопировать.');
+    const amountEl = row.querySelector('.currency-amount');
+    const length = formatted.replace(/[\s\u00a0\u202f]/g, '').length;
+    amountEl.className = 'currency-amount' + (length > 13 ? ' long' : length > 9 ? ' medium' : '') + (unavailable ? ' unavailable' : '');
+    amountEl.textContent = formatted;
+    return row;
   }
 
   function renderCurrencies() {
-    const fragment = document.createDocumentFragment();
-    for (const code of selectedCodes) {
-      const currency = metadata.get(code);
-      const amount = convertedValue(code);
-      const formatted = displayAmount(code, amount);
-      const active = code === activeCode;
-      const row = document.createElement('button');
-      row.className = 'currency-row' + (active ? ' active' : '');
-      row.dataset.currency = code;
-      row.setAttribute('aria-pressed', String(active));
-      row.setAttribute('aria-label', currency.name + ', ' + (amount === null ? 'курс недоступен' : formatted) + (active ? ', ввод суммы' : ', выбрать для ввода'));
-      row.title = 'Нажмите для ввода. Удерживайте, чтобы скопировать.';
-      const length = formatted.replace(/[\s\u00a0\u202f]/g, '').length;
-      const sizeClass = length > 13 ? ' long' : length > 9 ? ' medium' : '';
-      row.innerHTML = '<span class="currency-badge" aria-hidden="true">' + safeText(currency.symbol || code.slice(0, 1)) + '</span>'
-        + '<span class="currency-meta"><span class="currency-code">' + safeText(code) + '</span><span class="currency-name">' + safeText(SHORT_NAMES[code] || currency.name) + '</span></span>'
-        + '<span class="currency-result"><span class="currency-amount' + sizeClass + (amount === null ? ' unavailable' : '') + '">' + safeText(formatted) + '</span></span>';
-      fragment.appendChild(row);
+    const list = $('currency-list');
+    const seen = new Set(selectedCodes);
+    for (const [code, row] of currencyRows) {
+      if (!seen.has(code)) {
+        row.remove();
+        currencyRows.delete(code);
+      }
     }
-    $('currency-list').replaceChildren(fragment);
+    for (let index = 0; index < selectedCodes.length; index++) {
+      const code = selectedCodes[index];
+      const row = updateCurrencyRow(code);
+      const current = list.children[index];
+      if (current !== row) list.insertBefore(row, current || null);
+    }
+    while (list.children.length > selectedCodes.length) list.lastChild.remove();
     $('input-label').textContent = 'Ввод в ' + activeCode;
+    $('expression').setAttribute('aria-label', 'Выражение для ' + activeCode);
     const expression = String(calcState.expression || '0').replace(/\*/g, ' × ').replace(/\//g, ' ÷ ').replace(/\+/g, ' + ').replace(/-/g, '−').replace(/\./g, ',');
     $('expression').textContent = calcState.error || expression;
     $('expression').classList.toggle('error', !!calcState.error);
@@ -148,6 +191,10 @@
     if (code === activeCode) return;
     if (calcState.error || !Number.isFinite(calcState.value)) {
       showToast('Сначала исправьте выражение или нажмите AC');
+      return;
+    }
+    if (code !== activeCode && rateState.rates && !Core.hasRate(code, rateState.rates)) {
+      showToast('Для этой валюты нет курса в текущем снимке');
       return;
     }
     const value = convertedValue(code);
@@ -173,7 +220,7 @@
   async function copyAmount(code) {
     const value = convertedValue(code);
     if (value === null || calcState.error) { showToast('Сумма пока недоступна'); return; }
-    const text = Core.format(value, code === activeCode ? 6 : 2).replace(/[\s\u00a0\u202f]/g, '');
+    const text = Core.copyText(value, code);
     try {
       if (native && native.copy) native.copy(text);
       else if (navigator.clipboard && window.isSecureContext) await navigator.clipboard.writeText(text);
@@ -199,7 +246,8 @@
     toastTimeout = setTimeout(() => { $('toast').hidden = true; }, 2400);
   }
 
-  function showSheet(kind) {
+  function openSheet(kind, pushHistory) {
+    if (pushHistory && currentSheet && currentSheet !== kind) sheetStack.push(currentSheet);
     if (!currentSheet) previousFocus = document.activeElement;
     currentSheet = kind;
     $('sheet-backdrop').hidden = false;
@@ -211,7 +259,14 @@
     $('sheet').focus({ preventScroll: true });
   }
 
+  function showSheet(kind) { openSheet(kind, false); }
+
   function closeSheet() {
+    if (sheetStack.length) {
+      const previous = sheetStack.pop();
+      openSheet(previous, false);
+      return;
+    }
     currentSheet = null;
     $('sheet-backdrop').hidden = true;
     document.querySelector('.app-shell').inert = false;
@@ -226,7 +281,7 @@
       + '</div><p class="setting-label">Под себя</p>'
       + '<button class="settings-action" data-action="currencies"><span><strong>Мои валюты</strong><small>' + safeText(selectedCodes.join(' · ')) + '</small></span><span class="chevron" aria-hidden="true">›</span></button>'
       + '<button class="settings-action" data-action="info"><span><strong>О курсах и приложении</strong><small>Источник, обновление и работа без интернета</small></span><span class="chevron" aria-hidden="true">›</span></button>'
-      + '<p class="settings-footnote">Нажмите на валюту, чтобы считать в ней.<br>Удерживайте сумму, чтобы скопировать.<br>Ровно · без рекламы и регистрации</p>';
+      + '<p class="settings-footnote">Нажмите на валюту, чтобы считать в ней.<br>Кнопка копирования или удержание строки копирует сумму.<br>Ровно · без рекламы и регистрации</p>';
   }
 
   function renderPicker() {
@@ -248,7 +303,8 @@
     const matches = ordered.filter((currency) => (currency.code + ' ' + currency.name).toLocaleLowerCase('ru-RU').includes(search));
     $('currency-picker-list').innerHTML = matches.length ? matches.map((currency) => {
       const selected = selectedCodes.includes(currency.code);
-      return '<button class="picker-row' + (selected ? ' selected' : '') + '" data-toggle-currency="' + safeText(currency.code) + '" aria-pressed="' + selected + '" aria-label="' + safeText(currency.code + ', ' + currency.name) + '"><span class="currency-badge" aria-hidden="true">' + safeText(currency.symbol || currency.code.slice(0, 1)) + '</span><span class="currency-meta"><span class="currency-code">' + safeText(currency.code) + '</span><span class="currency-name">' + safeText(currency.name) + '</span></span><span class="picker-check" aria-hidden="true"><svg viewBox="0 0 20 20"><path d="m5 10 3.5 3.5L15 7"/></svg></span></button>';
+      const missingRate = rateState.rates && !Core.hasRate(currency.code, rateState.rates);
+      return '<button class="picker-row' + (selected ? ' selected' : '') + (missingRate ? ' missing-rate' : '') + '" data-toggle-currency="' + safeText(currency.code) + '" aria-pressed="' + selected + '" aria-label="' + safeText(currency.code + ', ' + currency.name + (missingRate ? ', курс недоступен' : '')) + '"><span class="currency-badge" aria-hidden="true">' + safeText(currency.symbol || currency.code.slice(0, 1)) + '</span><span class="currency-meta"><span class="currency-code">' + safeText(currency.code) + '</span><span class="currency-name">' + safeText(currency.name) + (missingRate ? ' · нет курса' : '') + '</span></span><span class="picker-check" aria-hidden="true"><svg viewBox="0 0 20 20"><path d="m5 10 3.5 3.5L15 7"/></svg></span></button>';
     }).join('') : '<p class="picker-empty">Такой валюты нет в списке. Попробуйте международный код, например GBP.</p>';
     $('picker-done').textContent = 'Готово · ' + selectedCodes.length + ' ' + pluralCurrencies(selectedCodes.length);
   }
@@ -271,7 +327,12 @@
         if (activeCode === code) return;
       }
       selectedCodes = selectedCodes.filter((item) => item !== code);
-    } else selectedCodes.push(code);
+    } else {
+      if (rateState.rates && !Core.hasRate(code, rateState.rates)) {
+        showToast('Валюту можно добавить, но курс появится после обновления');
+      }
+      selectedCodes.push(code);
+    }
     haptic();
     persist();
     renderCurrencies();
@@ -282,13 +343,13 @@
     $('sheet-title').textContent = 'Просто посчитать';
     const fetched = rateState.fetchedAt ? new Date(rateState.fetchedAt).toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : 'ещё не загружены';
     $('sheet-content').innerHTML = '<p class="info-intro">Нужные валюты.<br>Один калькулятор.<br><em>Ничего лишнего.</em></p>'
-      + '<div class="info-card"><dl><div><dt>Источник</dt><dd>' + safeText(rateState.provider || 'Currency API') + '</dd></div><div><dt>Дата курсов</dt><dd>' + safeText(dateLabel(rateState.date, true)) + '</dd></div><div><dt>Загружены</dt><dd>' + safeText(fetched) + '</dd></div></dl></div>'
+      + '<div class="info-card"><dl><div><dt>Источник</dt><dd>' + safeText(rateState.provider || 'Currency API') + '</dd></div><div><dt>Дата курсов</dt><dd>' + safeText(dateLabel(rateState.date, true)) + '</dd></div><div><dt>Загружены</dt><dd>' + safeText(fetched) + '</dd></div><div><dt>Версия</dt><dd>' + safeText(appVersion) + '</dd></div></dl></div>'
       + (rateState.error ? '<p class="info-error">Не удалось обновить курсы. Проверьте подключение и нажмите кнопку обновления.' + (rateState.rates ? ' Расчёты используют сохранённые данные.' : '') + '</p>' : '')
       + '<p class="info-paragraph">Курсы справочные. Поставщик обновляет их ежедневно. Приложение проверяет обновления при открытии; можно обновить вручную кнопкой ↻.</p>'
       + '<p class="info-paragraph">Без интернета работают последние сохранённые курсы. Дата рядом с кнопкой обновления — дата самих курсов, а не время загрузки.</p>'
       + '<p class="info-paragraph">Банк или обменник может использовать другой курс и комиссию. Для RUB и BYN разница с доступным вам курсом может быть особенно заметной.</p>'
       + '<button class="source-link" data-action="source">Открыть источник курсов ↗</button>'
-      + '<p class="settings-footnote">Ровно 0.1.0 · Личный конвертер валют<br>Без рекламы, аккаунтов и аналитики.<br>Настройки и последние курсы хранятся на устройстве.</p>';
+      + '<p class="settings-footnote">Ровно ' + safeText(appVersion) + ' · Личный конвертер валют<br>Без рекламы, аккаунтов и аналитики.<br>Настройки и последние курсы хранятся на устройстве.</p>';
   }
 
   function validateState(state) {
@@ -311,9 +372,14 @@
     const validated = validateState(state);
     if (!validated) return;
     rateState = { rates: null, date: null, provider: null, fetchedAt: null, error: null, refreshing: false, ...validated };
+    if (rateState.rates && !Core.hasRate(activeCode, rateState.rates)) {
+      const fallback = selectedCodes.find((code) => Core.hasRate(code, rateState.rates));
+      if (fallback) activeCode = fallback;
+    }
     renderStatus();
     renderCurrencies();
     if (currentSheet === 'info') renderInfo();
+    else if (currentSheet === 'currencies') renderPickerList($('currency-search') ? $('currency-search').value : '');
   }
 
   async function fetchSnapshot(url) {
@@ -365,7 +431,7 @@
 
   $('settings-button').addEventListener('click', () => showSheet('settings'));
   $('add-currency').addEventListener('click', () => showSheet('currencies'));
-  $('status-detail').addEventListener('click', () => rateState.rates ? showSheet('info') : refreshRates());
+  $('status-detail').addEventListener('click', () => rateState.rates ? openSheet('info', !!currentSheet) : refreshRates());
   $('refresh-button').addEventListener('click', refreshRates);
   $('copy-button').addEventListener('click', () => copyAmount(activeCode));
   $('close-sheet').addEventListener('click', closeSheet);
@@ -376,6 +442,7 @@
   });
   $('currency-list').addEventListener('click', (event) => {
     if (Date.now() < suppressClickUntil) return;
+    if (event.target.closest('.currency-copy')) return;
     const row = event.target.closest('[data-currency]');
     if (row) selectCurrency(row.dataset.currency);
   });
@@ -384,16 +451,22 @@
     if (!row) return;
     clearTimeout(longPressTimeout);
     longPressCode = row.dataset.currency;
+    longPressOrigin = { x: event.clientX, y: event.clientY };
     const code = longPressCode;
     longPressTimeout = setTimeout(() => {
       if (longPressCode === code) { suppressClickUntil = Date.now() + 700; copyAmount(code); }
-    }, 550);
+    }, LONG_PRESS_MS);
   });
-  function cancelLongPress() { clearTimeout(longPressTimeout); longPressCode = null; }
+  function cancelLongPress() { clearTimeout(longPressTimeout); longPressCode = null; longPressOrigin = null; }
   $('currency-list').addEventListener('pointerup', cancelLongPress);
   $('currency-list').addEventListener('pointercancel', cancelLongPress);
   $('currency-list').addEventListener('pointerleave', cancelLongPress);
-  $('currency-list').addEventListener('pointermove', cancelLongPress);
+  $('currency-list').addEventListener('pointermove', (event) => {
+    if (!longPressOrigin) return;
+    const dx = event.clientX - longPressOrigin.x;
+    const dy = event.clientY - longPressOrigin.y;
+    if ((dx * dx) + (dy * dy) > LONG_PRESS_MOVE_PX * LONG_PRESS_MOVE_PX) cancelLongPress();
+  });
   $('currency-list').addEventListener('contextmenu', (event) => event.preventDefault());
   $('sheet-content').addEventListener('click', (event) => {
     const themeChoice = event.target.closest('[data-theme-choice]');
@@ -408,7 +481,7 @@
         if (native && native.openSource) native.openSource();
         else window.open(SOURCE_URL, '_blank', 'noopener,noreferrer');
       } catch (_) { showToast('Не удалось открыть источник'); }
-    } else showSheet(action.dataset.action);
+    } else openSheet(action.dataset.action, true);
   });
   document.addEventListener('keydown', (event) => {
     if (event.key === 'Escape' && currentSheet) { event.preventDefault(); closeSheet(); return; }
@@ -442,6 +515,9 @@
   window.onRatesUpdated = receiveRates;
   window.onNativeBack = function () { if (currentSheet) { closeSheet(); return true; } return false; };
   applyTheme();
+  if (native && native.getVersion) {
+    try { appVersion = native.getVersion() || appVersion; } catch (_) { /* Browser preview. */ }
+  }
   renderCurrencies();
   if (native && native.getState) {
     try { receiveRates(native.getState()); }

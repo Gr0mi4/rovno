@@ -22,14 +22,19 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 final class RatesRepository {
+    interface BodyFetcher {
+        String fetch(String endpoint) throws IOException;
+    }
+
     static final long REFRESH_INTERVAL_MS = 6 * 60 * 60 * 1000L;
     static final String SOURCE_URL = "https://github.com/fawazahmed0/exchange-api";
-    private static final String[] ENDPOINTS = {
+    static final String[] ENDPOINTS = {
             "https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/usd.json",
             "https://latest.currency-api.pages.dev/v1/currencies/usd.json"
     };
     private static final int MAX_BODY = 512 * 1024;
     private static RatesRepository instance;
+    static BodyFetcher bodyFetcher = RatesRepository::download;
     private final SharedPreferences preferences;
     private final Handler main = new Handler(Looper.getMainLooper());
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
@@ -43,6 +48,11 @@ final class RatesRepository {
     static synchronized RatesRepository get(Context context) {
         if (instance == null) instance = new RatesRepository(context.getApplicationContext());
         return instance;
+    }
+
+    static synchronized void resetForTests() {
+        instance = null;
+        bodyFetcher = RatesRepository::download;
     }
 
     private RatesRepository(Context context) {
@@ -104,7 +114,7 @@ final class RatesRepository {
         RatesDocument result = null;
         for (String endpoint : ENDPOINTS) {
             try {
-                RatesDocument candidate = RatesDocument.parse(download(endpoint), System.currentTimeMillis());
+                RatesDocument candidate = RatesDocument.parse(bodyFetcher.fetch(endpoint), System.currentTimeMillis());
                 synchronized (this) {
                     if (document != null && candidate.date.isBefore(document.date)) {
                         throw new IOException("Endpoint returned an older snapshot");
@@ -123,7 +133,6 @@ final class RatesRepository {
                 document = result;
                 error = null;
                 try {
-                    // Commit on our worker so a process exit cannot lose the last good response.
                     if (!preferences.edit().putString("document", result.toCache()).commit()) {
                         error = "Курсы обновлены, но не удалось сохранить их для работы без интернета.";
                     }
@@ -155,7 +164,7 @@ final class RatesRepository {
             connection.setInstanceFollowRedirects(false);
             connection.setUseCaches(false);
             connection.setRequestProperty("Accept", "application/json");
-            connection.setRequestProperty("User-Agent", "Rovno/0.1 Android");
+            connection.setRequestProperty("User-Agent", "Rovno/" + BuildConfig.VERSION_NAME + " Android");
             if (connection.getResponseCode() != HttpURLConnection.HTTP_OK) throw new IOException("HTTP failure");
             if (connection.getContentLengthLong() > MAX_BODY) throw new IOException("Response too large");
             try (InputStream stream = connection.getInputStream();

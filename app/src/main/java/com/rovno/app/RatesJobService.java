@@ -9,6 +9,8 @@ import android.content.Context;
 
 public final class RatesJobService extends JobService {
     private static final int JOB_ID = 10701;
+    private volatile JobParameters activeJob;
+    private volatile boolean stopped;
 
     static void schedule(Context context) {
         JobScheduler scheduler = context.getSystemService(JobScheduler.class);
@@ -22,12 +24,20 @@ public final class RatesJobService extends JobService {
     }
 
     @Override public boolean onStartJob(JobParameters params) {
-        RatesRepository.get(this).refresh(false, () -> jobFinished(params, false));
+        activeJob = params;
+        stopped = false;
+        RatesRepository.get(this).refresh(false, () -> {
+            if (!stopped && activeJob == params) {
+                jobFinished(params, false);
+                activeJob = null;
+            }
+        });
         return true;
     }
 
     @Override public boolean onStopJob(JobParameters params) {
-        // A bounded shared fetch may finish for the foreground; Android can reschedule the job.
+        stopped = true;
+        if (activeJob == params) activeJob = null;
         return true;
     }
 }

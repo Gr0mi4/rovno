@@ -43,6 +43,14 @@ public final class SmokeInstrumentation extends Instrumentation {
             if (!"true".equals(evaluate(web, "typeof JSON.parse(Android.getState()).refreshing === 'boolean'"))) {
                 throw new AssertionError("Native state bridge returned an invalid envelope");
             }
+            if (!"true".equals(evaluate(web, "typeof Android.getVersion === 'function' && Android.getVersion().length > 0"))) {
+                throw new AssertionError("Version bridge is unavailable");
+            }
+            String sheetFlow = evaluate(web, "(() => { document.getElementById('settings-button').click(); const opened = !document.getElementById('sheet-backdrop').hidden; document.getElementById('close-sheet').click(); return opened && document.getElementById('sheet-backdrop').hidden; })()");
+            if (!"true".equals(sheetFlow)) throw new AssertionError("Settings sheet did not open and close");
+            if (!"true".equals(evaluate(web, "document.documentElement.dataset.theme === 'dark' || document.documentElement.dataset.theme === 'light'"))) {
+                throw new AssertionError("Theme dataset is missing");
+            }
             runOnMainSync(() -> {
                 if (web.getSettings().getAllowFileAccess() || web.getSettings().getAllowContentAccess()
                         || web.getSettings().getAllowUniversalAccessFromFileURLs()) {
@@ -50,7 +58,7 @@ public final class SmokeInstrumentation extends Instrumentation {
                 }
             });
             runOnMainSync(activity::finish);
-            result.putString("stream", "Rovno smoke passed: packaged UI rendered, calculator 100 + 25 = 125, native bridge available, file access denied.\n");
+            result.putString("stream", "Rovno smoke passed: UI, calculator, bridge, version, sheet, file access denied.\n");
             finish(Activity.RESULT_OK, result);
         } catch (Throwable error) {
             result.putString("shortMsg", error.toString());

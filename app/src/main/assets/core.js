@@ -19,10 +19,30 @@
     ['THB','Таиландский бат','฿'],['VND','Вьетнамский донг','₫'],['ZAR','Южноафриканский рэнд','R']
   ].map(([code,name,symbol]) => ({code,name,symbol}));
   const DEFAULT_CODES = ['PLN','USD','EUR','BYN','RUB'];
+  const ZERO_DECIMAL = new Set(['BIF','CLP','DJF','GNF','ISK','JPY','KMF','KRW','PYG','RWF','UGX','UYI','VND','VUV','XAF','XOF','XPF']);
+  const THREE_DECIMAL = new Set(['BHD','IQD','JOD','KWD','LYD','OMR','TND']);
   const clean = x => Object.is(x,-0) ? 0 : x;
   function finite(x) {
     if (!Number.isFinite(x) || Math.abs(x) > 1e18) throw new Error('Слишком большое число');
     return clean(x);
+  }
+  function fractionDigits(code) {
+    if (ZERO_DECIMAL.has(code)) return 0;
+    if (THREE_DECIMAL.has(code)) return 3;
+    return 2;
+  }
+  function adaptiveFractionDigits(value, code) {
+    const base = fractionDigits(code);
+    if (!Number.isFinite(value) || value === 0) return base;
+    const abs = Math.abs(value);
+    if (base > 0 && abs >= Math.pow(10, -base)) return base;
+    if (base === 0 && abs >= 1) return 0;
+    let digits = Math.max(base, 2);
+    while (digits < 8 && abs < Math.pow(10, -digits)) digits++;
+    return Math.min(digits, 8);
+  }
+  function endsWithAdditivePercent(expression) {
+    return /[+-]\d+(?:\.\d+)?%$/.test(expression);
   }
   function evaluate(input) {
     if (typeof input !== 'string' || input.length > 256) throw new Error('Слишком длинное выражение');
@@ -71,14 +91,38 @@
   function convert(amount,from,to,rates) {
     if (!Number.isFinite(amount)) throw new Error('Введите число');
     if (from === to) return clean(amount);
-    if (!rates || !Number.isFinite(rates[from]) || !Number.isFinite(rates[to]) || rates[from] <= 0 || rates[to] <= 0)
-      throw new Error('Нет курса для этой валюты');
+    if (!hasRate(from, rates) || !hasRate(to, rates)) throw new Error('Нет курса для этой валюты');
     return finite(amount / rates[from] * rates[to]);
+  }
+  function hasRate(code, rates) {
+    return !!(rates && Number.isFinite(rates[code]) && rates[code] > 0);
   }
   function format(value,maxFraction=2) {
     if(!Number.isFinite(value)) return '—';
     const digits=Math.max(0,Math.min(10,maxFraction));
-    return new Intl.NumberFormat('ru-RU', {minimumFractionDigits:digits === 2 ? 2 : 0, maximumFractionDigits:digits}).format(clean(value));
+    const minDigits = digits === 0 ? 0 : (digits >= 2 ? 2 : 0);
+    return new Intl.NumberFormat('ru-RU', {
+      minimumFractionDigits: minDigits,
+      maximumFractionDigits: digits
+    }).format(clean(value));
+  }
+  function formatAmount(value, code, options) {
+    if (!Number.isFinite(value)) return '—';
+    const active = options && options.active;
+    const forCopy = options && options.forCopy;
+    if (active && options && options.rawExpression && /^-?\d+(?:[.,]\d*)?$/.test(options.rawExpression)) {
+      const parts = String(options.rawExpression).replace(',', '.').split('.');
+      const integer = Number(parts[0]);
+      const grouped = Object.is(integer, -0) ? '−0' : format(integer, 0);
+      return grouped + (parts.length > 1 ? ',' + parts[1] : '');
+    }
+    const digits = forCopy
+      ? Math.max(adaptiveFractionDigits(value, code), fractionDigits(code) === 0 ? 4 : fractionDigits(code))
+      : (active ? Math.max(adaptiveFractionDigits(value, code), 2) : adaptiveFractionDigits(value, code));
+    return format(value, digits);
+  }
+  function copyText(value, code) {
+    return formatAmount(value, code, { forCopy: true }).replace(/[\s\u00a0\u202f]/g, '');
   }
   function numberText(value) {
     const text=String(Number(finite(value).toPrecision(15)));
@@ -126,6 +170,10 @@
         this.resetNext=false;return this.state();
       }
       if(['+','-','*','/'].includes(key)) {
+        if (endsWithAdditivePercent(this.expression)) {
+          try { this.expression = numberText(evaluate(this.expression)); }
+          catch(e) { this.explicitError = e.message; return this.state(); }
+        }
         this.expression=this.expression.replace(/[+*/-]+$/,'') || '0';
         this.expression+=key;this.resetNext=false;return this.state();
       }
@@ -142,10 +190,13 @@
       if(last && last[0].replace(/\D/g,'').length>=15) return this.state();
       if(this.expression.length>=240) return this.state();
       if(key === '.' && !last) this.expression+='0.';
-      else if(last && last[0]==='0' && key !== '.') this.expression=this.expression.slice(0,last.index)+key;
+      else if(last && last[0]==='0' && key !== '.' && !last[0].includes('.')) this.expression=this.expression.slice(0,last.index)+key;
       else this.expression+=key;
       return this.state();
     }
   }
-  return {CURRENCIES,DEFAULT_CODES,Calculator,evaluate,format,convert};
+  return {
+    CURRENCIES, DEFAULT_CODES, Calculator, evaluate, format, convert, formatAmount, copyText,
+    hasRate, fractionDigits, adaptiveFractionDigits, endsWithAdditivePercent
+  };
 });

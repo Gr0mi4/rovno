@@ -7,6 +7,7 @@ import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Intent;
 import android.content.pm.ApplicationInfo;
+import android.content.res.Configuration;
 import android.graphics.Color;
 import android.graphics.Insets;
 import android.net.Uri;
@@ -87,7 +88,7 @@ public final class MainActivity extends Activity {
         settings.setSupportMultipleWindows(false);
         settings.setGeolocationEnabled(false);
         settings.setMediaPlaybackRequiresUserGesture(true);
-        settings.setTextZoom(100);
+        applyWebViewTextZoom();
         CookieManager.getInstance().setAcceptCookie(false);
         CookieManager.getInstance().setAcceptThirdPartyCookies(webView, false);
         webView.setWebViewClient(new LocalAssetsClient());
@@ -102,8 +103,14 @@ public final class MainActivity extends Activity {
         container.requestApplyInsets();
     }
 
+    @Override public void onConfigurationChanged(Configuration configuration) {
+        super.onConfigurationChanged(configuration);
+        applyWebViewTextZoom();
+    }
+
     @Override protected void onResume() {
         super.onResume();
+        applyWebViewTextZoom();
         webView.onResume();
         rates.addListener(stateListener);
         rates.refresh(false, null);
@@ -140,6 +147,13 @@ public final class MainActivity extends Activity {
     private void sendState() {
         if (isFinishing() || isDestroyed() || !pageReady) return;
         webView.evaluateJavascript("window.onRatesUpdated && window.onRatesUpdated(" + rates.state() + ");", null);
+    }
+
+    private void applyWebViewTextZoom() {
+        if (webView == null) return;
+        float scale = getResources().getConfiguration().fontScale;
+        int zoom = Math.round(100f * scale);
+        webView.getSettings().setTextZoom(Math.max(85, Math.min(zoom, 200)));
     }
 
     private void applyTheme(String theme) {
@@ -179,6 +193,7 @@ public final class MainActivity extends Activity {
             main.post(() -> webView.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP));
         }
         @JavascriptInterface public void setTheme(String theme) { main.post(() -> applyTheme(theme)); }
+        @JavascriptInterface public String getVersion() { return BuildConfig.VERSION_NAME; }
         @JavascriptInterface public void openSource() {
             main.post(() -> {
                 try {
