@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       emulator:
-        description: 'Also run Android emulator smoke check'
+        description: 'Smoke-test the signed release APK in an Android emulator'
         type: boolean
         default: false
 
@@ -32,22 +32,47 @@ jobs:
       - name: Validate calculator and conversion behavior
         run: node --test tests/*.test.js
       - name: Load release signing key when configured
+        id: signing
         if: github.event_name != 'pull_request'
         env:
           KEYSTORE_BASE64: ${{ secrets.ROVNO_KEYSTORE_BASE64 }}
+          ROVNO_STORE_PASSWORD: ${{ secrets.ROVNO_STORE_PASSWORD }}
+          ROVNO_KEY_ALIAS: ${{ secrets.ROVNO_KEY_ALIAS }}
+          ROVNO_KEY_PASSWORD: ${{ secrets.ROVNO_KEY_PASSWORD }}
         run: |
-          if [ -n "$KEYSTORE_BASE64" ]; then
-            printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/rovno-release.jks"
-            echo "ROVNO_KEYSTORE=$RUNNER_TEMP/rovno-release.jks" >> "$GITHUB_ENV"
+          if [ -z "$KEYSTORE_BASE64$ROVNO_STORE_PASSWORD$ROVNO_KEY_ALIAS$ROVNO_KEY_PASSWORD" ]; then
+            exit 0
           fi
-      - name: Test, lint, and build release APK
+          if [ -z "$KEYSTORE_BASE64" ] || [ -z "$ROVNO_STORE_PASSWORD" ] || [ -z "$ROVNO_KEY_ALIAS" ] || [ -z "$ROVNO_KEY_PASSWORD" ]; then
+            echo 'Release signing requires all four ROVNO signing secrets.' >&2
+            exit 1
+          fi
+          umask 077
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/rovno-release.jks"
+          echo "ROVNO_KEYSTORE=$RUNNER_TEMP/rovno-release.jks" >> "$GITHUB_ENV"
+          echo 'available=true' >> "$GITHUB_OUTPUT"
+      - name: Require signing for the release emulator check
+        if: github.event_name == 'workflow_dispatch' && inputs.emulator && steps.signing.outputs.available != 'true'
+        run: |
+          echo 'Configure the ROVNO signing secrets before requesting a signed release emulator check.' >&2
+          exit 1
+      - name: Test, lint, and build signed release and matching test APK
+        if: github.event_name != 'pull_request' && steps.signing.outputs.available == 'true'
         env:
           ROVNO_STORE_PASSWORD: ${{ secrets.ROVNO_STORE_PASSWORD }}
           ROVNO_KEY_ALIAS: ${{ secrets.ROVNO_KEY_ALIAS }}
           ROVNO_KEY_PASSWORD: ${{ secrets.ROVNO_KEY_PASSWORD }}
         run: |
           chmod +x gradlew
+          ./gradlew --no-daemon -PtestBuildType=release testDebugUnitTest lintRelease assembleRelease assembleReleaseAndroidTest
+      - name: Test, lint, and build unsigned release and debug test APKs
+        if: steps.signing.outputs.available != 'true'
+        run: |
+          chmod +x gradlew
           ./gradlew --no-daemon testDebugUnitTest lintRelease assembleRelease assembleDebug assembleDebugAndroidTest
+      - name: Remove temporary signing key
+        if: always() && github.event_name != 'pull_request'
+        run: rm -f -- "$RUNNER_TEMP/rovno-release.jks"
       - name: Name APK deliverables
         run: |
           mkdir -p release
@@ -70,8 +95,18 @@ jobs:
             app/build/reports/tests/
             app/build/reports/lint-results-release.html
       - uses: actions/upload-artifact@v4
+        if: steps.signing.outputs.available == 'true'
         with:
-          name: android-smoke-apks
+          name: signed-release-smoke-apks
+          if-no-files-found: error
+          path: |
+            app/build/outputs/apk/release/app-release.apk
+            app/build/outputs/apk/androidTest/release/app-release-androidTest.apk
+      - uses: actions/upload-artifact@v4
+        if: steps.signing.outputs.available != 'true'
+        with:
+          name: debug-smoke-apks
+          if-no-files-found: error
           path: |
             app/build/outputs/apk/debug/*.apk
             app/build/outputs/apk/androidTest/debug/*.apk
@@ -84,7 +119,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: android-smoke-apks
+          name: signed-release-smoke-apks
           path: apks
       - name: Enable emulator acceleration
         run: |
@@ -94,15 +129,22 @@ jobs:
       - uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 35
+          target: google_apis
           arch: x86_64
           profile: pixel_7
           script: |
-            adb install apks/debug/app-debug.apk
-            adb install apks/androidTest/debug/app-debug-androidTest.apk
+            adb install apks/release/app-release.apk
+            adb install apks/androidTest/release/app-release-androidTest.apk
+            adb shell pm clear com.rovno.app
             adb shell am instrument -w com.rovno.app.test/com.rovno.app.SmokeInstrumentation | tee smoke.txt
             grep -q 'Rovno smoke passed' smoke.txt
+            adb shell am start -n com.rovno.app/.MainActivity
+            sleep 3
+            adb exec-out screencap -p > android-preview.png
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: emulator-smoke-result
-          path: smoke.txt
+          path: |
+            smoke.txt
+            android-preview.png

@@ -9,6 +9,7 @@ def canSign = [releaseStore, releaseStorePassword, releaseAlias, releaseKeyPassw
 android {
     namespace 'com.rovno.app'
     compileSdk 35
+    testBuildType = providers.gradleProperty('testBuildType').getOrElse('debug')
     defaultConfig {
         applicationId 'com.rovno.app'
         minSdk 26
