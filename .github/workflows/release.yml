@@ -124,16 +124,20 @@ jobs:
           arch: x86_64
           profile: pixel_7
           script: |
+            adb logcat -c
             adb install apks/app-release.apk
             adb install apks/app-release-androidTest.apk
             adb shell pm clear com.rovno.app
             adb shell am instrument -w com.rovno.app.test/com.rovno.app.SmokeInstrumentation | tee smoke-api26.txt
+            adb logcat -d -v threadtime > logcat-api26.txt
             grep -q 'Rovno smoke passed' smoke-api26.txt
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: emulator-smoke-api26
-          path: smoke-api26.txt
+          path: |
+            smoke-api26.txt
+            logcat-api26.txt
 
   emulator-api35:
     needs: build
@@ -156,10 +160,12 @@ jobs:
           arch: x86_64
           profile: pixel_7
           script: |
+            adb logcat -c
             adb install apks/app-release.apk
             adb install apks/app-release-androidTest.apk
             adb shell pm clear com.rovno.app
             adb shell am instrument -w com.rovno.app.test/com.rovno.app.SmokeInstrumentation | tee smoke-api35.txt
+            adb logcat -d -v threadtime > logcat-api35.txt
             grep -q 'Rovno smoke passed' smoke-api35.txt
             adb shell am start -n com.rovno.app/.MainActivity
             sleep 3
@@ -170,6 +176,7 @@ jobs:
           name: emulator-smoke-api35
           path: |
             smoke-api35.txt
+            logcat-api35.txt
             android-preview.png
 
   publish:
