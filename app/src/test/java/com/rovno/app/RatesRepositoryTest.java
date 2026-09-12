@@ -15,9 +15,6 @@ import org.robolectric.annotation.Config;
 import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
@@ -43,17 +40,12 @@ public class RatesRepositoryTest {
         Map<String, String> responses = new HashMap<>();
         responses.put(RatesRepository.ENDPOINTS[0], VALID);
         RatesRepository.bodyFetcher = responses::get;
-        AtomicReference<String> stateText = new AtomicReference<>();
-        CountDownLatch latch = new CountDownLatch(1);
         RatesRepository repository = RatesRepository.get(context);
-        repository.refresh(true, () -> {
-            stateText.set(repository.state());
-            latch.countDown();
-        });
-        assertTrue(latch.await(3, TimeUnit.SECONDS));
-        assertNotNull(stateText.get());
-        assertTrue(stateText.get().contains("\"date\":\"2026-09-11\""));
-        assertFalse(stateText.get().contains("\"refreshing\":true"));
+        repository.refresh(true, null);
+        String stateText = awaitRefresh(repository);
+        assertNotNull(stateText);
+        assertTrue(stateText.contains("\"date\":\"2026-09-11\""));
+        assertFalse(stateText.contains("\"refreshing\":true"));
     }
 
     @Test public void refreshKeepsCachedSnapshotWhenAllEndpointsFail() throws Exception {
@@ -62,14 +54,20 @@ public class RatesRepositoryTest {
         context.getSharedPreferences("daily_rates_v1", Context.MODE_PRIVATE).edit().putString("document", cache).commit();
         RatesRepository.resetForTests();
         RatesRepository repository = RatesRepository.get(context);
-        AtomicReference<String> stateText = new AtomicReference<>();
-        CountDownLatch latch = new CountDownLatch(1);
-        repository.refresh(true, () -> {
-            stateText.set(repository.state());
-            latch.countDown();
-        });
-        assertTrue(latch.await(3, TimeUnit.SECONDS));
-        assertTrue(stateText.get().contains("Не удалось обновить курсы"));
-        assertTrue(stateText.get().contains("\"date\":\"2026-09-10\""));
+        repository.refresh(true, null);
+        String stateText = awaitRefresh(repository);
+        assertTrue(stateText.contains("Не удалось обновить курсы"));
+        assertTrue(stateText.contains("\"date\":\"2026-09-10\""));
+    }
+
+    private static String awaitRefresh(RatesRepository repository) throws InterruptedException {
+        long deadline = System.currentTimeMillis() + 3_000;
+        String state;
+        do {
+            state = repository.state();
+            if (!state.contains("\"refreshing\":true")) return state;
+            Thread.sleep(10);
+        } while (System.currentTimeMillis() < deadline);
+        throw new AssertionError("Repository refresh timed out");
     }
 }
