@@ -39,7 +39,11 @@ public class RatesRepositoryTest {
     @Test public void refreshStoresLatestSnapshotFromFetcher() throws Exception {
         Map<String, String> responses = new HashMap<>();
         responses.put(RatesRepository.ENDPOINTS[0], VALID);
-        RatesRepository.bodyFetcher = responses::get;
+        RatesRepository.bodyFetcher = endpoint -> {
+            String response = responses.get(endpoint);
+            if (response == null) throw new IOException("unavailable");
+            return response;
+        };
         RatesRepository repository = RatesRepository.get(context);
         repository.refresh(true, null);
         String stateText = awaitRefresh(repository);
@@ -49,10 +53,10 @@ public class RatesRepositoryTest {
     }
 
     @Test public void refreshKeepsCachedSnapshotWhenAllEndpointsFail() throws Exception {
-        RatesRepository.bodyFetcher = endpoint -> { throw new IOException("offline"); };
         String cache = RatesDocument.parse(VALID.replace("2026-09-11", "2026-09-10"), System.currentTimeMillis()).toCache();
         context.getSharedPreferences("daily_rates_v1", Context.MODE_PRIVATE).edit().putString("document", cache).commit();
         RatesRepository.resetForTests();
+        RatesRepository.bodyFetcher = endpoint -> { throw new IOException("offline"); };
         RatesRepository repository = RatesRepository.get(context);
         repository.refresh(true, null);
         String stateText = awaitRefresh(repository);
