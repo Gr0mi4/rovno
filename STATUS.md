@@ -2,7 +2,7 @@
 
 Обновлено: **12 сентября 2026**. Версия: **0.1.0, первый публичный релиз**.
 
-**Подписанный APK публикуется автоматически при push тега `v0.1.0`.** Постоянная ссылка: [releases/latest/download/rovno.apk](https://github.com/Gr0mi4/rovno/releases/latest/download/rovno.apk).
+**Подписанный APK публикуется через ручной запуск Release workflow; тег создаётся автоматически только после всех успешных проверок.** Постоянная ссылка: [releases/latest/download/rovno.apk](https://github.com/Gr0mi4/rovno/releases/latest/download/rovno.apk).
 
 ## Уже сделано
 
@@ -28,7 +28,7 @@
 | JavaScript: калькулятор, проценты, форматирование | **20 / 20** |
 | Java: `RatesDocument` и repository (Robolectric) | unit tests в CI |
 | `ci.yml` на `main` | JS + JVM + lint |
-| `release.yml` на теге `v*` | signed APK, verify, emulator smoke, GitHub Release |
+| `release.yml` вручную из `main` | signed APK, verify, emulator smoke, tag, GitHub Release |
 
 ## Ручная проверка (владелец)
 

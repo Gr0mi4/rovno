@@ -2,7 +2,7 @@
 
 Application ID: `com.rovno.app`. Keep this ID and the release signing key unchanged so users can install updates over an existing APK.
 
-Version source of truth: `versionCode` and `versionName` in `app/build.gradle`. The release tag must match `versionName` (`v0.1.0` ↔ `0.1.0`).
+Version source of truth: `versionCode` and `versionName` in `app/build.gradle`. The release workflow creates the matching tag only after all gates pass (`0.1.0` → `v0.1.0`).
 
 ## Signing certificate
 
@@ -30,11 +30,11 @@ A Windows DPAPI backup exists outside the repository (`rovno-signing.dpapi`). Cr
 | Workflow | Trigger | Purpose |
 |---|---|---|
 | `ci.yml` | Push to `main`, pull requests | JS tests, JVM unit tests, lint — **no signing** |
-| `release.yml` | Tag `v*` | Signed APK, verification, emulator smoke, GitHub Release |
+| `release.yml` | Manual dispatch from `main` | Signed APK, verification, emulator smoke, tag, GitHub Release |
 
 ### Release gate (fail-closed)
 
-A tag build fails if any of the following is true:
+A release run fails without creating a tag if any of the following is true:
 
 - A signing secret is missing
 - The signed APK is not produced
@@ -47,8 +47,8 @@ There is no unsigned fallback on the release path.
 
 1. Bump `versionCode` and `versionName` in `app/build.gradle`.
 2. Merge to `main` and confirm `CI` is green.
-3. Create and push an annotated tag: `git tag -a v0.1.0 -m "Rovno 0.1.0" && git push origin v0.1.0`
-4. Wait for the **Release** workflow on that tag.
+3. In GitHub Actions, open **Release**, select **Run workflow**, and choose `main`.
+4. Wait for all release gates. The final job creates the version tag and GitHub Release atomically.
 5. Download `rovno.apk` from the GitHub Release (not the Actions artifact).
 6. Verify locally:
    ```sh
