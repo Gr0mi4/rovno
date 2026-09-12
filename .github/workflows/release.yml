@@ -93,12 +93,12 @@ jobs:
           cp app/build/outputs/apk/androidTest/release/app-release-androidTest.apk smoke-apks/app-release-androidTest.apk
           cd release
           sha256sum rovno.apk > SHA256SUMS.txt
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: signed-release-smoke-apks
           if-no-files-found: error
           path: smoke-apks/*
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: rovno-release
           path: release/*
@@ -131,7 +131,7 @@ jobs:
             adb shell am instrument -w com.rovno.app.test/com.rovno.app.SmokeInstrumentation | tee smoke-api26.txt
             adb logcat -d -v threadtime > logcat-api26.txt
             grep -q 'Rovno smoke passed' smoke-api26.txt
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: emulator-smoke-api26
@@ -170,7 +170,7 @@ jobs:
             adb shell am start -n com.rovno.app/.MainActivity
             sleep 3
             adb exec-out screencap -p > android-preview.png
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: emulator-smoke-api35
