@@ -37,17 +37,25 @@ fi
 
 BADGING="$("$AAPT2" dump badging "$APK")"
 echo "$BADGING"
-echo "$BADGING" | grep -q "package: name='$EXPECTED_PACKAGE'"
-echo "$BADGING" | grep -q "versionName='$EXPECTED_VERSION_NAME'"
-echo "$BADGING" | grep -q "versionCode='$EXPECTED_VERSION_CODE'"
-echo "$BADGING" | grep -q "application-debuggable='false'"
+grep -Fq "package: name='$EXPECTED_PACKAGE'" <<< "$BADGING"
+grep -Fq "versionName='$EXPECTED_VERSION_NAME'" <<< "$BADGING"
+grep -Fq "versionCode='$EXPECTED_VERSION_CODE'" <<< "$BADGING"
+grep -Fq "minSdkVersion:'26'" <<< "$BADGING"
+grep -Fq "targetSdkVersion:'35'" <<< "$BADGING"
+if grep -Fq "application-debuggable" <<< "$BADGING"; then
+  echo "Debuggable application detected" >&2
+  exit 1
+fi
 
-PERMISSIONS="$(echo "$BADGING" | grep "uses-permission:" || true)"
-for forbidden in ACCESS_FINE_LOCATION ACCESS_COARSE_LOCATION CAMERA RECORD_AUDIO READ_CONTACTS; do
-  if echo "$PERMISSIONS" | grep -q "$forbidden"; then
-    echo "Unexpected permission: $forbidden" >&2
-    exit 1
-  fi
+PERMISSIONS="$(awk -F"'" '/^uses-permission:/ {print $2}' <<< "$BADGING")"
+for permission in $PERMISSIONS; do
+  case "$permission" in
+    android.permission.INTERNET|android.permission.RECEIVE_BOOT_COMPLETED) ;;
+    *)
+      echo "Unexpected permission: $permission" >&2
+      exit 1
+      ;;
+  esac
 done
 
 echo "APK verification passed for $EXPECTED_PACKAGE $EXPECTED_VERSION_NAME"
