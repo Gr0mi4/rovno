@@ -124,7 +124,7 @@ jobs:
           arch: x86_64
           profile: pixel_7
           script: |
-            adb logcat -c
+            adb logcat -c || true
             adb install apks/app-release.apk
             adb install apks/app-release-androidTest.apk
             adb shell pm clear com.rovno.app
@@ -160,7 +160,7 @@ jobs:
           arch: x86_64
           profile: pixel_7
           script: |
-            adb logcat -c
+            adb logcat -c || true
             adb install apks/app-release.apk
             adb install apks/app-release-androidTest.apk
             adb shell pm clear com.rovno.app

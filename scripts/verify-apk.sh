@@ -50,7 +50,7 @@ fi
 PERMISSIONS="$(awk -F"'" '/^uses-permission:/ {print $2}' <<< "$BADGING")"
 for permission in $PERMISSIONS; do
   case "$permission" in
-    android.permission.INTERNET|android.permission.RECEIVE_BOOT_COMPLETED) ;;
+    android.permission.INTERNET|android.permission.ACCESS_NETWORK_STATE|android.permission.RECEIVE_BOOT_COMPLETED) ;;
     *)
       echo "Unexpected permission: $permission" >&2
       exit 1

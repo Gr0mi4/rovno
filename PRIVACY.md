@@ -38,7 +38,7 @@ The settings screen may open the upstream project page in your default browser. 
 
 ## Permissions
 
-Rovno requests only `INTERNET` and `RECEIVE_BOOT_COMPLETED` (to reschedule background rate refresh). It does not request storage, contacts, camera, microphone, or location permissions.
+Rovno requests only `INTERNET`, `ACCESS_NETWORK_STATE` (required by Android for network-constrained background jobs), and `RECEIVE_BOOT_COMPLETED` (to reschedule background rate refresh). It does not request storage, contacts, camera, microphone, or location permissions.
 
 ## Retention and deletion
 
